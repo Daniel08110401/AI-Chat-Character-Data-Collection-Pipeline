@@ -1,0 +1,72 @@
+# docker-compose.yml
+
+x-airflow-common: &airflow-common
+  # dockerfile.airflow를 사용하도록 build 설정을 유지
+  build:
+    context: .
+    dockerfile: dockerfile.airflow
+    # 빌드 시 dockerfile.airflow에 DOCKER_GID라는 변수 전달
+    args:
+      DOCKER_GID_ON_HOST: "${DOCKER_GID}"
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow # postgresql DAG/task 저장
+  volumes:
+    - ./airflow_home/dags:/opt/airflow/dags
+    - ./airflow_home/logs:/opt/airflow/logs
+    - ./airflow_home/plugins:/opt/airflow/plugins
+    - /var/run/docker.sock:/var/run/docker.sock
+  depends_on:
+    - postgres
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "8081:5432"
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--hostname", "$${HOSTNAME}"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db upgrade
+        airflow users create \
+          --username admin \
+          --firstname admin \
+          --lastname admin \
+          --role Admin \
+          --email admin@example.com \
+          --password admin || true
+
+
+volumes:
+  postgres-data:

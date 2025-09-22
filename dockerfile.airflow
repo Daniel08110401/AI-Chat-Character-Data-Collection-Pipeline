@@ -1,0 +1,24 @@
+# dockerfile.airflow
+
+# 1. Airflow 공식 이미지를 기반으로 시작
+FROM apache/airflow:2.7.3-python3.10
+
+# 2. Docker Operator 실행에 필요한 추가 패키지 설치
+RUN pip install apache-airflow-providers-docker
+
+# 3. Docker 권한 문제를 해결하기 위한 설정
+ARG DOCKER_GID_ON_HOST
+
+# 4. root 권한으로 전환하여 그룹 관련 작업 수행
+USER root
+
+# 5. GID 충돌을 방지하는 그룹 추가 명령어
+#    getent group으로 해당 GID의 그룹이 있는지 확인하고 없으면 docker_host라는 이름으로 생성합
+#    그리고 adduser 명령어로 airflow 유저를 해당 그룹에 추가
+RUN if ! getent group ${DOCKER_GID_ON_HOST} > /dev/null; then \
+        groupadd -g ${DOCKER_GID_ON_HOST} docker_host; \
+    fi && \
+    adduser airflow $(getent group ${DOCKER_GID_ON_HOST} | cut -d: -f1)
+
+# 6. 다시 원래의 airflow 유저로 전환
+USER airflow
